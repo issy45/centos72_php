@@ -1,0 +1,100 @@
+---
+- name: .phpenvディレクトリの存在チェック
+  stat: path=/home/vagrant/.phpenv
+  register: fmphpenv
+
+- name: ./phpenv-install.sh
+  shell: curl -L https://raw.github.com/CHH/phpenv/master/bin/phpenv-install.sh | bash
+  when: not fmphpenv.stat.exists
+  become: no
+
+- name: php-buildディレクトリの存在チェック
+  stat: path=/home/vagrant/.phpenv/plugins/php-build
+  register: fmphpbuild
+
+- name: php-buildをgit clone
+  git:
+    repo: https://github.com/CHH/php-build.git
+    dest: ~/.phpenv/plugins/php-build
+  when: not fmphpbuild.stat.exists
+  become: no
+
+- name: Apache連携のためのconfigureオプションを追記
+  lineinfile:
+    dest: "/home/vagrant/.phpenv/plugins/php-build/share/php-build/default_configure_options"
+    line: --with-apxs2=/usr/bin/apxs
+  become: no
+
+- name: "インストールするXdebugのversionを2.5.3にする"
+  lineinfile: >-
+    dest='/home/vagrant/.phpenv/plugins/php-build/share/php-build/definitions/{{php_version}}'
+    state=present
+    regexp='^install_xdebug'
+    line='install_xdebug "2.5.3"'
+  become: no
+
+- name: yum install patch
+  yum:
+    name: patch
+    state: installed
+
+- name: libphp*.soの吐き出しでPermission Errorになるのでパッチをあてる
+  shell: patch -u -f /home/vagrant/.phpenv/plugins/php-build/bin/php-build < /vagrant/ansible/patches/php-build.patch
+  become: no
+
+- name: php依存パッケージをインストール
+  yum:
+    name: "{{ item }}"
+    state: installed
+  with_items:
+    - bison
+    - libxml2
+    - libxml2-devel
+    - libxslt-devel
+    - libtidy-devel
+    - readline-devel
+    - libpng
+    - libpng-devel
+    - libjpeg
+    - libjpeg-devel
+    - re2c
+    - bzip2-devel
+    - libmcrypt
+    - libmcrypt-devel
+    - autoconf
+
+- name: bashファイルの追記
+  lineinfile:
+    dest: "~/.bash_profile"
+    line: export PATH="$HOME/.phpenv/bin:$PATH"
+  become: no
+
+- lineinfile:
+    dest: "~/.bash_profile"
+    line: eval "$(phpenv init -)"
+  become: no
+
+- name: PHPの存在確認
+  command: which php
+  register: php_install
+  failed_when: php_install.rc not in [0, 1]
+  become: no
+
+- name: php{{php_version}}のインストール
+  shell: bash -lc "CFLAGS=\"-g\" phpenv install {{php_version}}"
+  when: php_install.rc == 1
+  become: no
+
+- name: phpenv global {{php_version}}
+  command: bash -lc "phpenv global {{php_version}}"
+  when: php_install.rc == 1
+  become: no
+
+- name: rehashを行う
+  command: bash -lc "phpenv rehash"
+  when: php_install.rc == 1
+  become: no
+
+- name: シンボリックリンク libphp7.so
+  command: ln -s /home/vagrant/.phpenv/versions/{{php_version}}/libexec/libphp7.so /etc/httpd/modules/
+  

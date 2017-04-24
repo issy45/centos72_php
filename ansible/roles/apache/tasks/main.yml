@@ -1,0 +1,22 @@
+---
+- name: Apache2.4をインストール
+  yum:
+    name: "{{ item }}"
+    state: installed
+  with_items:
+   - httpd
+   - httpd-devel
+
+- name: httpd.confの修正
+  lineinfile:
+    dest: "/etc/httpd/conf/httpd.conf"
+    line: "{{ item }}"
+  with_items:
+    - 'LoadModule php7_module modules/libphp7.so'
+    - 'AddType application/x-httpd-php .php'
+
+# - name: httpd のサービス起動・自動起動設定
+#   service:
+#     name: httpd
+#     state: started
+#     enabled: yes
